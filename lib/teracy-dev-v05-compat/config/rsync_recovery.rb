@@ -6,7 +6,7 @@ module TeracyDevV05Compat
   module Config
     class RsyncRecovery < TeracyDev::Config::Configurator
 
-      def configure_node(settings, config)
+      def configure_common(settings, config)
         # The trigger is only supported by vagrant version >= 2.2.0
         require_version = ">= 2.2.0"
 
@@ -15,7 +15,22 @@ module TeracyDevV05Compat
           return
         end
 
+        essential_version = extension_version(settings, 'teracy-dev-essential')
+
+        return if Gem::Requirement.new('>= 0.3.0').satisfied_by?(Gem::Version.new(essential_version))
+
+        if gatling_rsync_installed?
+          config.gatling.rsync_on_startup = false
+        end
+
+        @last_node = settings['nodes'].last['name']
+      end
+
+      def configure_node(settings, config)
+        return if settings['name'] != @last_node
+
         synced_folders_settings = settings['vm']['synced_folders'] || []
+
         return if synced_folders_settings.empty?
 
         rsync_exists = synced_folders_settings.find { |x| x['type'] == 'rsync' }
@@ -25,11 +40,6 @@ module TeracyDevV05Compat
         command = rsync_cmd
 
         return if command.empty?
-
-        # To Ensure gatling-rsync don't run on start up
-        if command == 'gatling-rsync-auto'
-          config.gatling.rsync_on_startup = false
-        end
 
         config.trigger.after :up, :reload, :resume do |trigger|
           trigger.ruby do |env,machine|
@@ -65,24 +75,33 @@ module TeracyDevV05Compat
         if Vagrant::Util::Platform.linux?
           compatitive_version = ">= 2.2.3"
 
-          unless require_version_valid?(compatitive_version)
+          if require_version_valid?(compatitive_version)
+            cmd = 'rsync-auto'
+          else
             @logger.warn("Please use vagrant `#{compatitive_version}` to fix the problem: vagrant crashed, can not be recovered.")
             @logger.warn("See more at: https://github.com/hashicorp/vagrant/issues/10460")
-
-            if gatling_rsync_installed?
-              cmd = 'gatling-rsync-auto'
-            end
-
-          else
-            cmd = 'rsync-auto'
           end
+
         else
-          if gatling_rsync_installed?
-            cmd = 'gatling-rsync-auto'
-          end
+          cmd = 'gatling-rsync-auto'
         end
 
         cmd
+      end
+
+      # get installed extension version by looking up its name
+      def extension_version(settings, extension_name)
+        extensions = settings['teracy-dev']['extensions'] || []
+
+        essential_ext = extensions.find { |item| item['path']['extension'] == extension_name }
+
+        return nil if !TeracyDev::Util.true? essential_ext['enabled']
+
+        manifest = TeracyDev::Extension::Manager.manifest(essential_ext)
+
+        return manifest['version']
+
+        return nil
       end
 
     end

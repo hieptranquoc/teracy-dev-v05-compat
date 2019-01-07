@@ -22,7 +22,7 @@ vagrant:
       options:
         latency: 0.5
         time_format: "%%H:%%M:%%S"
-        rsync_on_startup: false
+        rsync_on_startup: true
 
     - _id: "v05-compat-rsync-back"
       _id_deprecated: "v05-compat-1"
